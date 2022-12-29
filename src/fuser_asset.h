@@ -28,6 +28,21 @@ struct FuserEnums {
 	}
 
 	struct Key {
+		enum class Value {
+			C,
+			Db, //D♭,
+			D,
+			Eb, //E♭,
+			E,
+			F,
+			Gb, //G♭,
+			G,
+			Ab, //A♭,
+			A,
+			Bb, //B♭,
+			B
+		};
+
 		static const std::vector<std::string>& GetValues() {
 			static std::vector<std::string> values = {
 				"EKey::C",
@@ -90,6 +105,35 @@ struct FuserEnums {
 				"EInstrument::Fiddle",
 				"EInstrument::Violin",
 				"EInstrument::Dogs"
+			};
+			return values;
+		}
+	};
+
+	struct Genre {
+		enum class Value {
+			None,
+			Classical,
+			Country,
+			Rock,
+			LatinAndCaribbean,
+			Pop,
+			RnB,
+			HipHop,
+			Dance
+		};
+
+		static const std::vector<std::string>& GetValues() {
+			static std::vector<std::string> values = {
+				"EGenre::None",
+				"EGenre::Classical",
+				"EGenre::Country",
+				"EGenre::Rock",
+				"EGenre::LatinAndCaribbean",
+				"EGenre::Pop",
+				"EGenre::RnB",
+				"EGenre::HipHop",
+				"EGenre::Dance"
 			};
 			return values;
 		}
@@ -198,6 +242,8 @@ struct SongSerializationCtx {
 	CelType curType;
 	MidiType curMidiType;
 	FuserEnums::KeyMode::Value curKeyMode;
+	FuserEnums::Genre::Value genre;
+	i32 year;
 	bool isTransition = false;
 
 	std::string folderRoot() {
@@ -222,7 +268,6 @@ struct SongSerializationCtx {
 
 	PakFile *pak = nullptr;
 	PakFile::PakEntry *curEntry = nullptr;
-
 
 	PakFile::PakEntry *getFile(const std::string &fullPath) {
 		for (auto &&e : pak->entries) {
@@ -354,8 +399,6 @@ struct SongSerializationCtx {
 			prop.data = value;
 		}
 	}
-
-
 };
 
 static const std::string Game_Prefix = "/Game/";
@@ -644,8 +687,9 @@ struct SongTransition {
 
 		if (!ctx.loading) {
 			ctx.serializeText("Title", ctx.songName);
-
-			i32 bpm = std::min(ctx.bpm, 157);
+			i32 bpm = ctx.bpm;
+			while (bpm > 157) bpm = std::ceil(bpm /= 2); //half-time anything faster, recursively
+			bpm = std::clamp(bpm, 90, 157);
 			ctx.serializePrimitive("BPM", bpm);
 
 			//Beats don't have a key, so they always serialize as EKey::Num
@@ -742,8 +786,9 @@ struct CelData {
 
 		if (!ctx.loading) {
 			ctx.serializeText("Title", ctx.songName);
-
-			i32 bpm = std::min(ctx.bpm, 157);
+			i32 bpm = ctx.bpm;
+			while (bpm > 157) bpm = std::ceil(bpm /= 2); //half-time anything faster, recursively
+			bpm = std::clamp(bpm, 90, 157);
 			ctx.serializePrimitive("BPM", bpm);
 
 			//Beats don't have a key, so they always serialize as EKey::Num
@@ -850,6 +895,8 @@ struct AssetRoot {
 	std::string songKey;
 	FuserEnums::KeyMode::Value keyMode;
 	i32 bpm;
+	FuserEnums::Genre::Value genre;
+	i32 year;
 
 	SongPakEntry file;
 
@@ -869,8 +916,14 @@ struct AssetRoot {
 		ctx.curEntry = file.e;
 
 		ctx.serializeText("Artist", artistName);
-
+		ctx.serializePrimitive<i32>("Year", year);
+		ctx.year = year;
+		
 		if (ctx.loading) {
+			auto genrePtr = ctx.getProp<EnumProperty>(ctx.curEntry, "Genre");
+			auto genreStr = genrePtr->value.getString(ctx.getHeader());
+			genre = FuserEnums::ToValue<FuserEnums::Genre>(genreStr);
+			ctx.genre = genre;
 			auto &celArray = *ctx.getProp<ArrayProperty>(file.e, "Cels");
 			for (auto &&v : celArray.values) {
 				FileLink<CelData> fileLink;
@@ -888,7 +941,9 @@ struct AssetRoot {
 			}
 		}
 		else {
+			auto genreStr = FuserEnums::FromValue<FuserEnums::Genre>(genre);
 			ctx.serializeName("SongShortName", shortName);
+			ctx.serializeEnum("Genre", genreStr);
 
 			size_t idx = 0;
 			for (auto &&e : celData) {
