@@ -1,5 +1,9 @@
 #pragma once
 
+#include "core_types.h"
+
+#include <iostream>
+
 struct PlayableAudio {
 	std::vector<u8> oggData;
 	u64 audioHandle = 0;
@@ -26,6 +30,34 @@ struct FuserEnums {
 	static inline const std::string &FromValue(typename Enum::Value v) {
 		return Enum::GetValues()[static_cast<size_t>(v)];
 	}
+
+	struct Genre {
+		enum class Value {
+			None,
+			Classical,
+			Country,
+			Rock,
+			LatinAndCaribbean,
+			Pop,
+			RnB,
+			HipHop,
+			Dance
+		};
+
+		static const std::vector<std::string>& GetValues() {
+			static std::vector<std::string> values = {
+				"EGenre::Classical",
+				"EGenre::Country",
+				"EGenre::Rock",
+				"EGenre::LatinAndCaribbean",
+				"EGenre::Pop",
+				"EGenre::RnB",
+				"EGenre::HipHop",
+				"EGenre::Dance"
+			};
+			return values;
+		}
+	};
 
 	struct Key {
 		enum class Value {
@@ -82,29 +114,12 @@ struct FuserEnums {
 			static std::vector<std::string> values = {
 				"EInstrument::None",
 				"EInstrument::Guitar",
-				"EInstrument::Bass",
 				"EInstrument::Drums",
 				"EInstrument::Vocal",
 				"EInstrument::Synth",
 				"EInstrument::Sampler",
 				"EInstrument::Horns",
-				"EInstrument::Strings",
-				"EInstrument::FemaleVocals",
-				"EInstrument::MaleVocals",
-				"EInstrument::BassGuitar",
-				"EInstrument::AcousticGuitar",
-				"EInstrument::ElectricGuitar",
-				"EInstrument::AcousticDrums",
-				"EInstrument::ElectricDrums",
-				"EInstrument::SteelDrums",
-				"EInstrument::Piano",
-				"EInstrument::Organ",
-				"EInstrument::Saxophone",
-				"EInstrument::Trumpet",
-				"EInstrument::Didgeridoo",
-				"EInstrument::Fiddle",
-				"EInstrument::Violin",
-				"EInstrument::Dogs"
+				"EInstrument::Strings"
 			};
 			return values;
 		}
@@ -238,6 +253,7 @@ struct SongSerializationCtx {
 	std::string shortName;
 	std::string songName;
 	std::string songKey;
+	std::string songGenre;
 	i32 bpm;
 	CelType curType;
 	MidiType curMidiType;
@@ -687,8 +703,10 @@ struct SongTransition {
 
 		if (!ctx.loading) {
 			ctx.serializeText("Title", ctx.songName);
+
 			i32 bpm = ctx.bpm;
 			while (bpm > 157) bpm = std::ceil(bpm /= 2); //half-time anything faster, recursively
+			if (bpm < 90) bpm = ctx.bpm; //prevent 158-179 bpm from clamping to 90
 			bpm = std::clamp(bpm, 90, 157);
 			ctx.serializePrimitive("BPM", bpm);
 
@@ -786,8 +804,10 @@ struct CelData {
 
 		if (!ctx.loading) {
 			ctx.serializeText("Title", ctx.songName);
+
 			i32 bpm = ctx.bpm;
 			while (bpm > 157) bpm = std::ceil(bpm /= 2); //half-time anything faster, recursively
+			if (bpm < 90) bpm = ctx.bpm; //prevent 158-179 bpm from clamping to 90
 			bpm = std::clamp(bpm, 90, 157);
 			ctx.serializePrimitive("BPM", bpm);
 
@@ -894,6 +914,8 @@ struct AssetRoot {
 	std::string songName;
 	std::string songKey;
 	FuserEnums::KeyMode::Value keyMode;
+	FuserEnums::Genre::Value genre;
+	i32 year;
 	i32 bpm;
 	FuserEnums::Genre::Value genre;
 	i32 year;
@@ -910,20 +932,22 @@ struct AssetRoot {
 		ctx.curKeyMode = keyMode;
 
 		//@REVISIT
-		file.thisObjectPath = 4;
+		file.thisObjectPath = 5;
 
 		file.serialize(ctx, "DLC/Songs/" + ctx.shortName + "/", "Meta_" + ctx.shortName);
 		ctx.curEntry = file.e;
 
 		ctx.serializeText("Artist", artistName);
+		
 		ctx.serializePrimitive<i32>("Year", year);
 		ctx.year = year;
-		
+
 		if (ctx.loading) {
 			auto genrePtr = ctx.getProp<EnumProperty>(ctx.curEntry, "Genre");
 			auto genreStr = genrePtr->value.getString(ctx.getHeader());
 			genre = FuserEnums::ToValue<FuserEnums::Genre>(genreStr);
 			ctx.genre = genre;
+
 			auto &celArray = *ctx.getProp<ArrayProperty>(file.e, "Cels");
 			for (auto &&v : celArray.values) {
 				FileLink<CelData> fileLink;
